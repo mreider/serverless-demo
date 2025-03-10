@@ -1,0 +1,55 @@
+service: parking-garage-java
+
+provider:
+  name: aws
+  runtime: java11
+  region: us-west-2
+  environment:
+    SNS_NOTIFICATION_TOPIC: ${self:service}-${sls:stage}-notifications
+    SQS_PAYMENT_QUEUE: ${self:service}-${sls:stage}-payments
+    KINESIS_STREAM: ${self:service}-${sls:stage}-events
+
+package:
+  artifact: build/libs/parking-garage.jar
+
+functions:
+  api:
+    handler: com.parking.handlers.ApiHandler
+    events:
+      - http:
+          path: /issue
+          method: post
+      - http:
+          path: /pay
+          method: post
+
+  notification:
+    handler: com.parking.handlers.NotificationHandler
+    events:
+      - sns:
+          arn: !Ref NotificationTopic
+
+  streamProcessor:
+    handler: com.parking.handlers.StreamHandler
+    events:
+      - stream:
+          type: kinesis
+          arn: !GetAtt ParkingEventStream.Arn
+
+resources:
+  Resources:
+    NotificationTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:provider.environment.SNS_NOTIFICATION_TOPIC}
+
+    PaymentQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:provider.environment.SQS_PAYMENT_QUEUE}
+
+    ParkingEventStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        Name: ${self:provider.environment.KINESIS_STREAM}
+        ShardCount: 1
